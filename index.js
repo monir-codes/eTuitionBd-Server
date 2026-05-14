@@ -1,14 +1,20 @@
+import {createRequire} from "module";
+const require = createRequire(import.meta.url)
+import dns from "node:dns";
+dns.setServers(['8.8.8.8', '1.1.1.1']);
+
 const express = require("express");
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const app = express();
 const cors = require("cors");
+require('dotenv').config();
 const port = process.env.PORT || 3000;
 
 // middleware
 app.use(express());
 app.use(cors());
 
-const uri = "mongodb+srv://etuitionbd:RHqMyzuXBaEL0Md4@simple-crud-cluster.0hdbxiy.mongodb.net/?appName=Simple-crud-cluster";
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@simple-crud-cluster.0hdbxiy.mongodb.net/?appName=Simple-crud-cluster`;
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -38,7 +44,7 @@ async function run() {
     );
   } finally {
     // Ensures that the client will close when you finish/error
-    await client.close();
+    // await client.close();
   }
 }
 run().catch(console.dir);
