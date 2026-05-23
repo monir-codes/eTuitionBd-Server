@@ -155,9 +155,7 @@ async function run() {
         const id = req.params.id;
 
         if (!id) {
-          return res
-            .status(400)
-            .send({ message: "ID is required" });
+          return res.status(400).send({ message: "ID is required" });
         }
 
         const query = { _id: new ObjectId(id) };
@@ -188,6 +186,17 @@ async function run() {
       }
       const result = await tuitionsCollection.insertOne(tuitions);
       res.send(result);
+    });
+
+    app.delete("/api/tuitions/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await tuitionsCollection.deleteOne(query);
+      if (result.deletedCount === 0) {
+        return res.status(404).send({ message: "Tuition not found" });
+      } else {
+        return res.send({ message: "Tuition deleted successfully" });
+      }
     });
 
     app.listen(port, () => {
