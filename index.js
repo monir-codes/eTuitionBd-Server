@@ -36,6 +36,7 @@ async function run() {
     const db = client.db("etuitionbd_db");
     const usersCollection = db.collection("users");
     const tuitionsCollection = db.collection("tuitions");
+    const appliantsCollection = db.collection("applicants");
 
     // users
     app.get("/api/users", async (req, res) => {
@@ -197,6 +198,21 @@ async function run() {
       } else {
         return res.send({ message: "Tuition deleted successfully" });
       }
+    });
+
+    // applicants
+    app.post("/api/tuitions/apply", async (req, res) => {
+      const apply = req.body;
+      const query = { _id: apply._id };
+      const existingApplicants = await appliantsCollection.findOne(query);
+
+      if (existingApplicants) {
+        return res
+          .status(400)
+          .send({ message: "Already Applied" });
+      }
+      const result = await appliantsCollection.insertOne(apply);
+      res.send(result);
     });
 
     app.listen(port, () => {
