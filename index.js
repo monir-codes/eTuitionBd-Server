@@ -44,8 +44,8 @@ async function run() {
 
     app.get("/api/user", async (req, res) => {
       try {
-        const { email } = req.query; 
-        
+        const { email } = req.query;
+
         if (!email) {
           return res
             .status(400)
@@ -79,6 +79,23 @@ async function run() {
           .send({ message: "user already exists in database" });
       }
       const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+
+    app.patch("/api/user", async (req, res) => {
+      const { email } = req.query;
+      const updatedData = req.body;
+      const query = {};
+      if (email) {
+        query.email = email;
+      }
+      const result = await usersCollection.updateOne(query, {
+        $set: updatedData,
+      });
+
+      if (result.matchedCount === 0) {
+        return res.status(404).send({ message: "user not found" });
+      }
       res.send(result);
     });
 
