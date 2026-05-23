@@ -35,6 +35,7 @@ async function run() {
 
     const db = client.db("etuitionbd_db");
     const usersCollection = db.collection("users");
+    const tuitionsCollection = db.collection("tuitions");
 
     app.get("/api/users", async (req, res) => {
       const cursor = usersCollection.find();
@@ -68,6 +69,7 @@ async function run() {
       }
     });
 
+    // users
     app.post("/api/users", async (req, res) => {
       const user = req.body;
       const query = { _id: user._id };
@@ -99,11 +101,10 @@ async function run() {
       res.send(result);
     });
 
-
     app.patch("/api/users/status/:id", async (req, res) => {
       try {
-        const id = req.params.id; 
-        const { status } = req.body; 
+        const id = req.params.id;
+        const { status } = req.body;
 
         if (!status) {
           return res.status(400).send({
@@ -112,11 +113,10 @@ async function run() {
           });
         }
 
-
-        const query = { _id: new ObjectId(id) }; 
+        const query = { _id: new ObjectId(id) };
         const updateDoc = {
           $set: {
-            status: status, 
+            status: status,
           },
         };
 
@@ -142,6 +142,26 @@ async function run() {
         });
       }
     });
+
+    // tuitions
+    app.post("/api/tuitions", async (req, res) => {
+      const tuitions = req.body;
+      const query = { _id: tuitions._id };
+      const existingPost = await tuitionsCollection.findOne(query);
+
+      if (existingPost) {
+        return res
+          .status(400)
+          .send({ message: "user already exists in database" });
+      }
+      const result = await tuitionsCollection.insertOne(tuitions);
+      res.send(result);
+    });
+
+
+
+
+
 
     app.listen(port, () => {
       console.log(`Example app listening on port ${port}`);
