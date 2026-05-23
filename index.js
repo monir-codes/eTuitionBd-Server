@@ -37,6 +37,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const tuitionsCollection = db.collection("tuitions");
 
+    // users
     app.get("/api/users", async (req, res) => {
       const cursor = usersCollection.find();
       const result = await cursor.toArray();
@@ -69,7 +70,6 @@ async function run() {
       }
     });
 
-    // users
     app.post("/api/users", async (req, res) => {
       const user = req.body;
       const query = { _id: user._id };
@@ -144,6 +144,38 @@ async function run() {
     });
 
     // tuitions
+    app.get("/api/tuitions", async (req, res) => {
+      const cursor = tuitionsCollection.find();
+      const result = await cursor.toArray();
+      res.send(result);
+    });
+
+    app.get("/api/tuition/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+
+        if (!id) {
+          return res
+            .status(400)
+            .send({ message: "ID is required" });
+        }
+
+        const query = { _id: new ObjectId(id) };
+        const result = await tuitionsCollection.findOne(query);
+
+        if (!result) {
+          return res
+            .status(404)
+            .send({ message: "Tuition not found in database" });
+        }
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        res.status(500).send({ message: "Internal server error" });
+      }
+    });
+
     app.post("/api/tuitions", async (req, res) => {
       const tuitions = req.body;
       const query = { _id: tuitions._id };
@@ -157,11 +189,6 @@ async function run() {
       const result = await tuitionsCollection.insertOne(tuitions);
       res.send(result);
     });
-
-
-
-
-
 
     app.listen(port, () => {
       console.log(`Example app listening on port ${port}`);
