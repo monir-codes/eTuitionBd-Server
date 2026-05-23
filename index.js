@@ -37,6 +37,12 @@ async function run() {
     const usersCollection = db.collection('users');
 
 
+    app.get('/api/users', async(req, res)=>{
+      const cursor = usersCollection.find();
+      const result = cursor.toArray();
+      res.send(result)
+    })
+
     app.listen(port, () => {
       console.log(`Example app listening on port ${port}`);
     });
