@@ -24,14 +24,18 @@ const client = new MongoClient(uri, {
   },
 });
 
+app.get("/", (req, res) => {
+  res.send("Welcome to eTuitionBD Server");
+});
+
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
-    app.get("/", (req, res) => {
-      res.send("Hello World!");
-    });
+    const db = client.db('eTuitionBD');
+    const usersCollection = db.collection('users');
+
 
     app.listen(port, () => {
       console.log(`Example app listening on port ${port}`);
