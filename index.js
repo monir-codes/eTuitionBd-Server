@@ -37,6 +37,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const tuitionsCollection = db.collection("tuitions");
     const appliantsCollection = db.collection("applicants");
+    const paymentsCollection = db.collection("payments");
 
     // users
     app.get("/api/users", async (req, res) => {
@@ -207,12 +208,108 @@ async function run() {
       const existingApplicants = await appliantsCollection.findOne(query);
 
       if (existingApplicants) {
-        return res
-          .status(400)
-          .send({ message: "Already Applied" });
+        return res.status(400).send({ message: "Already Applied" });
       }
       const result = await appliantsCollection.insertOne(apply);
       res.send(result);
+    });
+
+    app.get("/api/tuitions/applicants/:id", async (req, res) => {
+      try {
+        const tuitionId = req.params.id;
+        if (!tuitionId) {
+          return res
+            .status(400)
+            .send({ success: false, message: "Tuition ID is required." });
+        }
+
+        const query = { tuitionId: tuitionId };
+
+        const result = await appliantsCollection.find(query).toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching applicants:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
+      }
+    });
+
+    app.patch("/api/tuitions/application-status", async (req, res) => {
+      try {
+        const { tuitionId, tutorId, status } = req.body;
+
+        if (!tuitionId || !tutorId || !status) {
+          return res.status(400).send({
+            success: false,
+            message:
+              "Missing parameters. tuitionId, tutorId, and status are all required.",
+          });
+        }
+
+        const query = {
+          tuitionId: tuitionId,
+          tutorId: tutorId,
+        };
+
+        const updateDoc = {
+          $set: {
+            status: status,
+          },
+        };
+
+        const result = await appliantsCollection.updateOne(query, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({
+            success: false,
+            message: "No application record found to update.",
+          });
+        }
+
+        res.send({
+          success: true,
+          message: `Application status successfully updated to ${status}.`,
+          modifiedCount: result.modifiedCount,
+        });
+      } catch (error) {
+        console.error("Error updating application status:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
+      }
+    });
+
+    // payment history
+
+    app.get("/api/payments/:email", async (req, res) => {
+      try {
+        const email = req.params.email; // 
+
+
+        if (!email || email === "undefined" || email === "null") {
+          return res.status(400).send({
+            success: false,
+            message: "Valid user email parameter is required in the url path.",
+          });
+        }
+
+        const query = { email: email.trim() };
+
+        const result = await paymentsCollection
+          .find(query)
+          .sort({ _id: -1 }) 
+          .toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching payment history:", error);
+        res.status(500).send({
+          success: false,
+          message: "Internal server error while fetching transaction logs.",
+        });
+      }
     });
 
     app.listen(port, () => {
