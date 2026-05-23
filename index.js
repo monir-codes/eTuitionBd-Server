@@ -11,7 +11,7 @@ require('dotenv').config();
 const port = process.env.PORT || 3000;
 
 // middleware
-app.use(express());
+app.use(express.json());
 app.use(cors());
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@simple-crud-cluster.0hdbxiy.mongodb.net/?appName=Simple-crud-cluster`;
@@ -33,14 +33,27 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
-    const db = client.db('eTuitionBD');
+    const db = client.db('etuitionbd_db');
     const usersCollection = db.collection('users');
 
 
     app.get('/api/users', async(req, res)=>{
       const cursor = usersCollection.find();
-      const result = cursor.toArray();
+      const result = await cursor.toArray();
       res.send(result)
+    });
+
+    app.post('/api/users', async(req, res)=>{
+      const user = req.body;
+      const query = { _id: user._id }
+      const existingUser = await usersCollection.findOne(query);
+
+      if(existingUser){
+        return res.status(400).send({message: 'user already exists in database'})
+      }
+        const result = await usersCollection.insertOne(user);
+        res.send(result)
+      
     })
 
     app.listen(port, () => {
