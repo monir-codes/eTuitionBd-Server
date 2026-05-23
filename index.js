@@ -4,7 +4,7 @@ import dns from "node:dns";
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 const express = require("express");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const cors = require("cors");
 require("dotenv").config();
@@ -97,6 +97,50 @@ async function run() {
         return res.status(404).send({ message: "user not found" });
       }
       res.send(result);
+    });
+
+
+    app.patch("/api/users/status/:id", async (req, res) => {
+      try {
+        const id = req.params.id; 
+        const { status } = req.body; 
+
+        if (!status) {
+          return res.status(400).send({
+            success: false,
+            message: "Status property is required in the request body.",
+          });
+        }
+
+
+        const query = { _id: new ObjectId(id) }; 
+        const updateDoc = {
+          $set: {
+            status: status, 
+          },
+        };
+
+        const result = await usersCollection.updateOne(query, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({
+            success: false,
+            message: "User account not found with the provided ID.",
+          });
+        }
+
+        res.send({
+          success: true,
+          message: `User status successfully updated to ${status}.`,
+          modifiedCount: result.modifiedCount,
+        });
+      } catch (error) {
+        console.error("Error updating user status:", error);
+        res.status(500).send({
+          success: false,
+          message: "Internal server error or invalid ObjectId format.",
+        });
+      }
     });
 
     app.listen(port, () => {
