@@ -1,13 +1,13 @@
-import {createRequire} from "module";
-const require = createRequire(import.meta.url)
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
 import dns from "node:dns";
-dns.setServers(['8.8.8.8', '1.1.1.1']);
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
 const express = require("express");
 const { MongoClient, ServerApiVersion } = require("mongodb");
 const app = express();
 const cors = require("cors");
-require('dotenv').config();
+require("dotenv").config();
 const port = process.env.PORT || 3000;
 
 // middleware
@@ -33,28 +33,54 @@ async function run() {
     // Connect the client to the server	(optional starting in v4.7)
     await client.connect();
 
-    const db = client.db('etuitionbd_db');
-    const usersCollection = db.collection('users');
+    const db = client.db("etuitionbd_db");
+    const usersCollection = db.collection("users");
 
-
-    app.get('/api/users', async(req, res)=>{
+    app.get("/api/users", async (req, res) => {
       const cursor = usersCollection.find();
       const result = await cursor.toArray();
-      res.send(result)
+      res.send(result);
     });
 
-    app.post('/api/users', async(req, res)=>{
+    app.get("/api/user", async (req, res) => {
+      try {
+        const { email } = req.query; 
+        
+        if (!email) {
+          return res
+            .status(400)
+            .send({ message: "Email query parameter is required" });
+        }
+
+        const query = { email: email };
+        const result = await usersCollection.findOne(query);
+
+        if (!result) {
+          return res
+            .status(404)
+            .send({ message: "User not found in database" });
+        }
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        res.status(500).send({ message: "Internal server error" });
+      }
+    });
+
+    app.post("/api/users", async (req, res) => {
       const user = req.body;
-      const query = { _id: user._id }
+      const query = { _id: user._id };
       const existingUser = await usersCollection.findOne(query);
 
-      if(existingUser){
-        return res.status(400).send({message: 'user already exists in database'})
+      if (existingUser) {
+        return res
+          .status(400)
+          .send({ message: "user already exists in database" });
       }
-        const result = await usersCollection.insertOne(user);
-        res.send(result)
-      
-    })
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
 
     app.listen(port, () => {
       console.log(`Example app listening on port ${port}`);
