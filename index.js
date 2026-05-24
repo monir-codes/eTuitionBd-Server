@@ -147,9 +147,35 @@ async function run() {
 
     // tuitions
     app.get("/api/tuitions", async (req, res) => {
-      const cursor = tuitionsCollection.find();
-      const result = await cursor.toArray();
-      res.send(result);
+      try {
+        const { search, category } = req.query;
+
+        let query = {};
+
+        if (search && search !== "undefined" && search.trim() !== "") {
+          query.$or = [
+            { title: { $regex: search, $options: "i" } },
+            { subject: { $regex: search, $options: "i" } },
+            { location: { $regex: search, $options: "i" } },
+          ];
+        }
+
+        if (category && category !== "All" && category !== "undefined") {
+          query.category = category;
+        }
+
+        const result = await tuitionsCollection
+          .find(query)
+          .sort({ _id: -1 })
+          .toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching filtered tuitions:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
+      }
     });
 
     app.get("/api/tuition/:id", async (req, res) => {
@@ -285,8 +311,7 @@ async function run() {
 
     app.get("/api/payments/:email", async (req, res) => {
       try {
-        const email = req.params.email; // 
-
+        const email = req.params.email; //
 
         if (!email || email === "undefined" || email === "null") {
           return res.status(400).send({
@@ -299,7 +324,7 @@ async function run() {
 
         const result = await paymentsCollection
           .find(query)
-          .sort({ _id: -1 }) 
+          .sort({ _id: -1 })
           .toArray();
 
         res.send(result);
