@@ -41,9 +41,25 @@ async function run() {
 
     // users
     app.get("/api/users", async (req, res) => {
-      const cursor = usersCollection.find();
-      const result = await cursor.toArray();
-      res.send(result);
+      try {
+        const { role } = req.query;
+
+        let query = {};
+
+        if (role && role !== "undefined") {
+          query.role = role.trim();
+        }
+
+        const cursor = usersCollection.find(query);
+        const result = await cursor.toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching users:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
+      }
     });
 
     app.get("/api/user", async (req, res) => {
@@ -178,6 +194,16 @@ async function run() {
       }
     });
 
+    app.get("/api/tuitions/my-posts/:uid", async(req, res)=>{
+      const uid = req.params.uid;
+      if(!uid){
+        return res.status(404).send({message: "uid is required"})
+      }
+      const query = {studentUID: uid}
+      const result = await tuitionsCollection.find(query).toArray();
+      res.send(result);
+    })
+
     app.get("/api/tuition/:id", async (req, res) => {
       try {
         const id = req.params.id;
@@ -259,6 +285,34 @@ async function run() {
         res
           .status(500)
           .send({ success: false, message: "Internal server error" });
+      }
+    });
+
+    app.get("/api/applied-jobs", async (req, res) => {
+      try {
+        const { email } = req.query;
+
+        if (!email || email === "undefined" || email === "null") {
+          return res.status(400).send({
+            success: false,
+            message: "Tutor email query parameter is required.",
+          });
+        }
+
+        const query = { tutorEmail: email};
+
+        const result = await appliantsCollection
+          .find(query)
+          .sort({ _id: -1 }) 
+          .toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching tutor applied jobs:", error);
+        res.status(500).send({
+          success: false,
+          message: "Internal server error while fetching applied tuitions.",
+        });
       }
     });
 
