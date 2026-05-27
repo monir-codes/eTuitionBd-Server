@@ -31,7 +31,7 @@ app.get("/", (req, res) => {
 async function run() {
   try {
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const db = client.db("etuitionbd_db");
     const usersCollection = db.collection("users");
@@ -42,7 +42,12 @@ async function run() {
     // users
     app.get("/api/users", async (req, res) => {
       try {
-        const { role } = req.query;
+        const { role, search = "", page = 1, limit = 6 } = req.query;
+
+        const currentPage = parseInt(page);
+        const itemsPerPage = parseInt(limit);
+
+        const skip = (currentPage - 1) * itemsPerPage;
 
         let query = {};
 
@@ -50,15 +55,50 @@ async function run() {
           query.role = role.trim();
         }
 
-        const cursor = usersCollection.find(query);
-        const result = await cursor.toArray();
+        if (search) {
+          query.$or = [
+            {
+              name: {
+                $regex: search,
+                $options: "i",
+              },
+            },
 
-        res.send(result);
+            {
+              institution: {
+                $regex: search,
+                $options: "i",
+              },
+            },
+
+            {
+              qualification: {
+                $regex: search,
+                $options: "i",
+              },
+            },
+          ];
+        }
+
+        const totalCount = await usersCollection.countDocuments(query);
+
+        const users = await usersCollection
+          .find(query)
+          .skip(skip)
+          .limit(itemsPerPage)
+          .toArray();
+
+        res.send({
+          tutors: users,
+          totalCount,
+        });
       } catch (error) {
         console.error("Error fetching users:", error);
-        res
-          .status(500)
-          .send({ success: false, message: "Internal server error" });
+
+        res.status(500).send({
+          success: false,
+          message: "Internal server error",
+        });
       }
     });
 
@@ -87,6 +127,13 @@ async function run() {
         res.status(500).send({ message: "Internal server error" });
       }
     });
+
+    app.get("/api/user/:id", async(req, res)=>{
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id )};
+      const result = await usersCollection.findOne(query);
+      res.send(result);
+    })
 
     app.post("/api/users", async (req, res) => {
       const user = req.body;
@@ -164,7 +211,12 @@ async function run() {
     // tuitions
     app.get("/api/tuitions", async (req, res) => {
       try {
-        const { search, category } = req.query;
+        const search = req.query.search;
+        const category = req.query.category;
+
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 6;
+        const skip = (page - 1) * limit; // কতগুলো ডাটা বাদ দিয়ে পরেরগুলো ধরবে
 
         let query = {};
 
@@ -180,12 +232,19 @@ async function run() {
           query.category = category;
         }
 
-        const result = await tuitionsCollection
+        const totalCount = await tuitionsCollection.countDocuments(query);
+
+        const tuitions = await tuitionsCollection
           .find(query)
-          .sort({ _id: -1 })
+          .sort({ _id: -1, title: 1 })
+          .skip(skip)
+          .limit(limit)
           .toArray();
 
-        res.send(result);
+        res.send({
+          tuitions,
+          totalCount,
+        });
       } catch (error) {
         console.error("Error fetching filtered tuitions:", error);
         res
@@ -194,15 +253,15 @@ async function run() {
       }
     });
 
-    app.get("/api/tuitions/my-posts/:uid", async(req, res)=>{
+    app.get("/api/tuitions/my-posts/:uid", async (req, res) => {
       const uid = req.params.uid;
-      if(!uid){
-        return res.status(404).send({message: "uid is required"})
+      if (!uid) {
+        return res.status(404).send({ message: "uid is required" });
       }
-      const query = {studentUID: uid}
+      const query = { studentUID: uid };
       const result = await tuitionsCollection.find(query).toArray();
       res.send(result);
-    })
+    });
 
     app.get("/api/tuition/:id", async (req, res) => {
       try {
@@ -239,6 +298,15 @@ async function run() {
           .send({ message: "user already exists in database" });
       }
       const result = await tuitionsCollection.insertOne(tuitions);
+      res.send(result);
+    });
+
+    app.patch("/api/tuitions/:id", async (req, res) => {
+      const id = req.params.id;
+      const updatedData = req.body;
+
+      const query = { _id: new ObjectId(id) };
+      const result = await tuitionsCollection.updateOne(query, { $set: updatedData });
       res.send(result);
     });
 
@@ -299,11 +367,11 @@ async function run() {
           });
         }
 
-        const query = { tutorEmail: email};
+        const query = { tutorEmail: email };
 
         const result = await appliantsCollection
           .find(query)
-          .sort({ _id: -1 }) 
+          .sort({ _id: -1 })
           .toArray();
 
         res.send(result);
@@ -391,12 +459,27 @@ async function run() {
       }
     });
 
+    app.post('/api/payments', async (req, res) => {
+      try {
+        const payment = req.body;
+
+        const result = await paymentsCollection.insertOne(payment);
+        res.status(201).send(result);
+      } catch (error) {
+        console.error("Error creating payment:", error);
+        res.status(500).send({
+          success: false,
+          message: "Internal server error while creating payment.",
+        });
+      }
+    });
+
     app.listen(port, () => {
       console.log(`Example app listening on port ${port}`);
     });
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
     );
