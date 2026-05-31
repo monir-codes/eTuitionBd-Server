@@ -15,24 +15,24 @@ import jwt from "jsonwebtoken";
 app.use(express.json());
 app.use(cors());
 
-// const verifyJWTToken = (req, res, next) => {
-//   const authHeader = req.headers.authorization;
+const verifyJWTToken = (req, res, next) => {
+  const authHeader = req.headers.authorization;
 
-//   if (!authHeader) {
-//     return res.status(401).send({ message: "Authorization header is missing" });
-//   }
+  if (!authHeader) {
+    return res.status(401).send({ message: "Authorization header is missing" });
+  }
 
-//   const token = authHeader.split(" ")[1];
+  const token = authHeader.split(" ")[1];
 
-//   jwt.verify(token, process.env.JWT_SECRET_KEY, (err, decoded) => {
-//     if (err) {
-//       return res.status(401).send({ message: "Invalid or expired token" });
-//     }
+  jwt.verify(token, process.env.JWT_SECRET_KEY, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: "Invalid or expired token" });
+    }
 
-//     req.user = decoded;
-//     next();
-//   });
-// };
+    req.user = decoded;
+    next();
+  });
+};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@simple-crud-cluster.0hdbxiy.mongodb.net/?appName=Simple-crud-cluster`;
 
@@ -135,7 +135,7 @@ async function run() {
       }
     });
 
-    app.get("/api/user", async (req, res) => {
+    app.get("/api/user", verifyJWTToken, async (req, res) => {
       try {
         const { email } = req.query;
 
@@ -161,14 +161,14 @@ async function run() {
       }
     });
 
-    app.get("/api/user/:id", async (req, res) => {
+    app.get("/api/user/:id", verifyJWTToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await usersCollection.findOne(query);
       res.send(result);
     });
 
-    app.post("/api/users", async (req, res) => {
+    app.post("/api/users", verifyJWTToken, async (req, res) => {
       try {
         const user = req.body;
 
@@ -201,7 +201,7 @@ async function run() {
       }
     });
 
-    app.patch("/api/user", async (req, res) => {
+    app.patch("/api/user", verifyJWTToken, async (req, res) => {
       const { email } = req.query;
       const updatedData = req.body;
       const query = {};
@@ -218,7 +218,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/api/users/status/:id", async (req, res) => {
+    app.patch("/api/users/status/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
         const { status } = req.body;
@@ -260,7 +260,7 @@ async function run() {
       }
     });
 
-    app.patch("/api/users/role/:id", async (req, res) => {
+    app.patch("/api/users/role/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
         const { role } = req.body;
@@ -312,7 +312,7 @@ async function run() {
       }
     });
 
-    app.delete("/api/user/:id", async (req, res) => {
+    app.delete("/api/user/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
 
@@ -448,7 +448,7 @@ async function run() {
       }
     });
 
-    app.get("/api/tuitions/my-posts/:uid", async (req, res) => {
+    app.get("/api/tuitions/my-posts/:uid", verifyJWTToken, async (req, res) => {
       try {
         const uid = req.params.uid;
         if (!uid) {
@@ -465,7 +465,7 @@ async function run() {
       }
     });
 
-    app.get("/api/tuition/:id", async (req, res) => {
+    app.get("/api/tuition/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
         if (!id) {
@@ -486,7 +486,7 @@ async function run() {
       }
     });
 
-    app.post("/api/tuitions", async (req, res) => {
+    app.post("/api/tuitions", verifyJWTToken, async (req, res) => {
       try {
         const tuitionPost = req.body;
 
@@ -506,7 +506,7 @@ async function run() {
       }
     });
 
-    app.patch("/api/tuitions/status/:id", async (req, res) => {
+    app.patch("/api/tuitions/status/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
         const { status } = req.body; // 'Approved' or 'Rejected'
@@ -525,7 +525,7 @@ async function run() {
       }
     });
 
-    app.patch("/api/tuitions/:id", async (req, res) => {
+    app.patch("/api/tuitions/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
         const updatedData = req.body;
@@ -542,7 +542,7 @@ async function run() {
       }
     });
 
-    app.delete("/api/tuitions/:id", async (req, res) => {
+    app.delete("/api/tuitions/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
@@ -569,7 +569,7 @@ async function run() {
       }
     });
 
-    app.post("/api/tuitions/apply", async (req, res) => {
+    app.post("/api/tuitions/apply", verifyJWTToken, async (req, res) => {
       try {
         const applyData = req.body;
 
@@ -594,7 +594,7 @@ async function run() {
       }
     });
 
-    app.delete("/api/tuitions/apply/:id", async (req, res) => {
+    app.delete("/api/tuitions/apply/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
@@ -626,7 +626,7 @@ async function run() {
 
     // applicants
 
-    app.get("/api/admin/pending-tutors", async (req, res) => {
+    app.get("/api/admin/pending-tutors", verifyJWTToken, async (req, res) => {
       try {
         const query = {
           role: "tutor",
@@ -646,7 +646,7 @@ async function run() {
       }
     });
 
-    app.patch("/api/admin/verify-tutor", async (req, res) => {
+    app.patch("/api/admin/verify-tutor", verifyJWTToken, async (req, res) => {
       try {
         const { email } = req.query;
         const { status } = req.body;
@@ -685,7 +685,7 @@ async function run() {
       }
     });
 
-    app.get("/api/admin/dashboard-stats", async (req, res) => {
+    app.get("/api/admin/dashboard-stats", verifyJWTToken, async (req, res) => {
       try {
         const [totalStudents, verifiedTutors, activeTuitions, pendingTuitions] =
           await Promise.all([
@@ -710,7 +710,7 @@ async function run() {
       }
     });
 
-    app.get("/api/tuitions/applicants/:id", async (req, res) => {
+    app.get("/api/tuitions/applicants/:id", verifyJWTToken, async (req, res) => {
       try {
         const tuitionId = req.params.id;
 
@@ -734,7 +734,7 @@ async function run() {
       }
     });
 
-    app.get("/api/applied-jobs", async (req, res) => {
+    app.get("/api/applied-jobs", verifyJWTToken, async (req, res) => {
       try {
         const { email } = req.query;
 
@@ -762,13 +762,13 @@ async function run() {
       }
     });
 
-    app.patch("/api/applied-jobs/:id", async (req, res) => {
+    app.patch("/api/applied-jobs/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
         const { proposal } = req.body; // সুইটঅ্যালার্ট২ থেকে আসা নতুন টেক্সট
 
         const query = { _id: new ObjectId(id) };
-        const application = await applicantsCollection.findOne(query); // 👈 আপনার ডাটাবেজের অ্যাপ্লিকেশন কালেকশন ভেরিয়েবল নাম দিবেন ভাই
+        const application = await applicantsCollection.findOne(query); // 👈 আপনার ডাটাবেজের অ্যাপ্লিকেশন কালেকশন ভেরিয়েবল নাম দিবেন ভাই
 
         if (!application) {
           return res
@@ -810,7 +810,7 @@ async function run() {
 
     // payment history
 
-    app.patch("/api/tuitions/application-status", async (req, res) => {
+    app.patch("/api/tuitions/application-status", verifyJWTToken, async (req, res) => {
       try {
         const { tuitionId, tutorEmail } = req.query;
         const { status } = req.body;
@@ -865,7 +865,7 @@ async function run() {
       }
     });
 
-    app.get("/api/admin/financial-reports", async (req, res) => {
+    app.get("/api/admin/financial-reports", verifyJWTToken, async (req, res) => {
       try {
         const query = { status: "successful" };
 
@@ -893,7 +893,7 @@ async function run() {
       }
     });
 
-    app.get("/api/payments/:email", async (req, res) => {
+    app.get("/api/payments/:email", verifyJWTToken, async (req, res) => {
       try {
         const email = req.params.email; //
 
@@ -921,7 +921,7 @@ async function run() {
       }
     });
 
-    app.post("/api/create-checkout-session", async (req, res) => {
+    app.post("/api/create-checkout-session", verifyJWTToken, async (req, res) => {
       try {
         const { price, tuitionTitle, tuitionId, tutorId } = req.body;
 
@@ -953,8 +953,8 @@ async function run() {
             tuitionId,
             tutorId,
           },
-          success_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/dashboard/payment-success?tuitionId=${tuitionId}&tutorId=${tutorId}`,
-          cancel_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/dashboard/student/view-applicants/${tuitionId}`,
+          success_url: `${process.env.CLIENT_URL || "https://etuitionbd-monir.vercel.app"}/dashboard/payment-success?tuitionId=${tuitionId}&tutorId=${tutorId}`,
+          cancel_url: `${process.env.CLIENT_URL || "https://etuitionbd-monir.vercel.app"}/dashboard/student/view-applicants/${tuitionId}`,
         });
 
         res.send({ success: true, url: session.url });
@@ -970,7 +970,7 @@ async function run() {
 
     // bookmarks
 
-    app.post("/api/bookmarks", async (req, res) => {
+    app.post("/api/bookmarks", verifyJWTToken, async (req, res) => {
       try {
         const bookmarkData = req.body; // ফ্রন্টএন্ড থেকে { userEmail, tuitionId } আসবে
 
@@ -994,11 +994,11 @@ async function run() {
       }
     });
 
-    app.get("/api/my-bookmarks/:email", async (req, res) => {
+    app.get("/api/my-bookmarks/:email", verifyJWTToken, async (req, res) => {
       try {
         const email = req.params.email;
 
-        // প্রথমে ইউজারের ইমেইল দিয়ে সব বুকমার্ক ডাটা আনা হলো
+        // প্রথমে ইউজারের ইমেইল দিয়ে সব বুকমার্ক ডাটা আনা হলো
         const userBookmarks = await bookmarksCollection
           .find({ userEmail: email })
           .toArray();
@@ -1017,7 +1017,7 @@ async function run() {
       }
     });
 
-    app.delete("/api/bookmarks", async (req, res) => {
+    app.delete("/api/bookmarks", verifyJWTToken, async (req, res) => {
       try {
         const { userEmail, tuitionId } = req.query;
         const query = { userEmail, tuitionId };
