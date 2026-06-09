@@ -48,18 +48,26 @@ app.get("/", (req, res) => {
   res.send("Welcome to eTuitionBD Server");
 });
 
+// মঙ্গোডিবি গ্লোবাল কালেকশন রেফারেন্স হোল্ডার ভাই
+let db,
+  usersCollection,
+  tuitionsCollection,
+  applicantsCollection,
+  paymentsCollection,
+  bookmarksCollection,
+  activitiesCollection,
+  stripe;
+
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
-    // await client.connect();
-
-    const db = client.db("etuitionbd_db");
-    const usersCollection = db.collection("users");
-    const tuitionsCollection = db.collection("tuitions");
-    const applicantsCollection = db.collection("applicants");
-    const paymentsCollection = db.collection("payments");
-    const bookmarksCollection = db.collection("bookmarks");
-    const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+    db = client.db("etuitionbd_db");
+    usersCollection = db.collection("users");
+    tuitionsCollection = db.collection("tuitions");
+    applicantsCollection = db.collection("applicants");
+    paymentsCollection = db.collection("payments");
+    bookmarksCollection = db.collection("bookmarks");
+    activitiesCollection = db.collection("activities");
+    stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
     app.post("/get-token", (req, res) => {
       const { email } = req.body;
@@ -72,6 +80,146 @@ async function run() {
         expiresIn: "1h",
       });
       res.send({ token: token });
+    });
+
+    // public stats
+    app.get("/api/public-stats", async (req, res) => {
+      try {
+        const [totalStudents, totalTutors, totalTuitions] = await Promise.all([
+          usersCollection.countDocuments({ role: "student" }),
+          usersCollection.countDocuments({ role: "tutor", isVerified: true }),
+          tuitionsCollection.countDocuments({ status: "Approved" }),
+        ]);
+
+        res.send({
+          totalStudents,
+          totalTutors,
+          totalTuitions,
+        });
+      } catch (error) {
+        console.error("Public stats fetching server error:", error);
+        res.status(500).send({
+          success: false,
+          message: "Failed to load live platform stats",
+        });
+      }
+    });
+
+    // notices/blogs
+    app.get("/api/notices", async (req, res) => {
+      try {
+        const result = await db
+          .collection("notices")
+          .find({})
+          .sort({ _id: -1 })
+          .toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching notices from database:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to fetch notices" });
+      }
+    });
+
+    app.post("/api/admin/notices", verifyJWTToken, async (req, res) => {
+      try {
+        const noticeData = req.body;
+        noticeData.createdAt = new Date();
+        const result = await db.collection("notices").insertOne(noticeData);
+        res.send({
+          success: true,
+          message: "Notice securely broadcasted to public feed",
+          result,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Failed to insert notice into cluster",
+        });
+      }
+    });
+
+    app.delete("/api/admin/notices/:id", verifyJWTToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await db
+          .collection("notices")
+          .deleteOne({ _id: new ObjectId(id) });
+        res.send({
+          success: true,
+          message: "Notice destroyed from database cluster",
+          result,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Database pipeline failed during delete",
+        });
+      }
+    });
+
+    app.patch("/api/admin/notices/:id", verifyJWTToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updatedNotice = req.body;
+        delete updatedNotice._id; // আইডি মিউটেশন প্রোটেকশন ভাই
+
+        const result = await db
+          .collection("notices")
+          .updateOne({ _id: new ObjectId(id) }, { $set: updatedNotice });
+        res.send({
+          success: true,
+          message: "Notice record updated in MongoDB instance",
+          result,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Database pipeline failed during patch",
+        });
+      }
+    });
+
+    // contacts
+    app.post("/api/contact", async (req, res) => {
+      try {
+        const messageData = req.body;
+        messageData.submittedAt = new Date();
+        const result = await db.collection("messages").insertOne(messageData);
+        res.send({
+          success: true,
+          message: "Message securely saved to cluster",
+          result,
+        });
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Pipeline failed to store message",
+        });
+      }
+    });
+
+    app.get("/api/admin/messages", verifyJWTToken, async (req, res) => {
+      try {
+        const result = await db
+          .collection("messages")
+          .find({})
+          .sort({ _id: -1 })
+          .toArray();
+        res.send(result);
+      } catch (error) {
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to fetch inbox messages" });
+      }
+    });
+
+    app.delete("/api/admin/messages/:id", verifyJWTToken, async (req, res) => {
+      const result = await db
+        .collection("messages")
+        .deleteOne({ _id: new ObjectId(req.params.id) });
+      res.send({ success: true, result });
     });
 
     // users
@@ -87,29 +235,24 @@ async function run() {
 
         let query = {};
 
-        // ১. রোল ফিল্টারিং (যদি role 'all' বা 'undefined' না হয়)
         if (role && role !== "all" && role !== "undefined") {
           query.role = role;
         }
 
-        // ২. সার্চ মেকানিজম (name, email, institution, qualification সব কভার করবে)
         if (search) {
           query.$or = [
             { name: { $regex: search, $options: "i" } },
-            { email: { $regex: search, $options: "i" } }, // 📧 ইমেইল সার্চ অ্যাড করা হলো স্টুডেন্টদের জন্য
+            { email: { $regex: search, $options: "i" } },
             { institution: { $regex: search, $options: "i" } },
             { qualification: { $regex: search, $options: "i" } },
           ];
         }
 
-        // 🔒 কন্ডিশনাল চেকিং: অ্যাডমিন প্যানেল নাকি সাধারণ পাবলিক পেজ?
         if (isAdminPanel === "true") {
-          // 👑 অ্যাডমিন প্যানেলের জন্য: কোনো পেজিনেশন/লিমিট নেই, ডিরেক্ট সব ইউজার (স্টুডেন্ট + টিউটর) এক অ্যারেতে যাবে
           const allUsers = await usersCollection.find(query).toArray();
           return res.send(allUsers);
         }
 
-        // 🏠 পাবলিক / হোমপেজের জন্য: লেটেস্ট টিউটরদের ডাটা পেজিনেশন সহ (আপনার আগের লজিক)
         const currentPage = parseInt(page);
         const itemsPerPage = parseInt(limit);
         const skip = (currentPage - 1) * itemsPerPage;
@@ -117,7 +260,7 @@ async function run() {
         const totalCount = await usersCollection.countDocuments(query);
         const users = await usersCollection
           .find(query)
-          .sort({ _id: -1 }) // 🕒 লেটেস্ট ডাটা আগে দেখানোর জন্য সর্ট
+          .sort({ _id: -1 })
           .skip(skip)
           .limit(itemsPerPage)
           .toArray();
@@ -135,11 +278,11 @@ async function run() {
       }
     });
 
-    app.get("/api/user", verifyJWTToken, async (req, res) => {
+    app.get("/api/user", async (req, res) => {
       try {
         const { email } = req.query;
 
-        if (!email) {
+        if (!email || email === "undefined" || email === "null") {
           return res
             .status(400)
             .send({ message: "Email query parameter is required" });
@@ -161,21 +304,19 @@ async function run() {
       }
     });
 
-    app.get("/api/user/:id", verifyJWTToken, async (req, res) => {
+    app.get("/api/user/:id", async (req, res) => {
       const id = req.params.id;
+      if (!ObjectId.isValid(id))
+        return res.status(400).send({ message: "Invalid ID format" });
       const query = { _id: new ObjectId(id) };
       const result = await usersCollection.findOne(query);
       res.send(result);
     });
 
-    app.post("/api/users", verifyJWTToken, async (req, res) => {
+    app.post("/api/users", async (req, res) => {
       try {
         const user = req.body;
-
-        const query = {
-          email: user.email,
-        };
-
+        const query = { email: user.email };
         const existingUser = await usersCollection.findOne(query);
 
         if (existingUser) {
@@ -187,13 +328,29 @@ async function run() {
 
         const result = await usersCollection.insertOne(user);
 
+        try {
+          await activitiesCollection.insertOne({
+            user: user.name || "Anonymous User",
+            type:
+              user.role === "tutor" ? "Tutor Registration" : "Student Signup",
+            detail: `${user.name || "A user"} registered successfully from regional hub using ${user.email}`,
+            status: user.role === "tutor" ? "Pending" : "Verified",
+            date: new Date().toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            }),
+          });
+        } catch (logErr) {
+          console.error("Operational logger injection failed:", logErr);
+        }
+
         res.send({
           success: true,
           result,
         });
       } catch (error) {
         console.error(error);
-
         res.status(500).send({
           success: false,
           message: error.message,
@@ -201,7 +358,7 @@ async function run() {
       }
     });
 
-    app.patch("/api/user", verifyJWTToken, async (req, res) => {
+    app.patch("/api/user", async (req, res) => {
       const { email } = req.query;
       const updatedData = req.body;
       const query = {};
@@ -218,7 +375,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch("/api/users/status/:id", verifyJWTToken, async (req, res) => {
+    app.patch("/api/users/status/:id", async (req, res) => {
       try {
         const id = req.params.id;
         const { status } = req.body;
@@ -230,6 +387,8 @@ async function run() {
           });
         }
 
+        if (!ObjectId.isValid(id))
+          return res.status(400).send({ message: "Invalid ID format" });
         const query = { _id: new ObjectId(id) };
         const updateDoc = {
           $set: {
@@ -238,14 +397,6 @@ async function run() {
         };
 
         const result = await usersCollection.updateOne(query, updateDoc);
-
-        if (result.matchedCount === 0) {
-          return res.status(404).send({
-            success: false,
-            message: "User account not found with the provided ID.",
-          });
-        }
-
         res.send({
           success: true,
           message: `User status successfully updated to ${status}.`,
@@ -255,12 +406,12 @@ async function run() {
         console.error("Error updating user status:", error);
         res.status(500).send({
           success: false,
-          message: "Internal server error or invalid ObjectId format.",
+          message: "Internal server error",
         });
       }
     });
 
-    app.patch("/api/users/role/:id", verifyJWTToken, async (req, res) => {
+    app.patch("/api/users/role/:id", async (req, res) => {
       try {
         const id = req.params.id;
         const { role } = req.body;
@@ -280,6 +431,8 @@ async function run() {
           });
         }
 
+        if (!ObjectId.isValid(id))
+          return res.status(400).send({ message: "Invalid ID format" });
         const query = { _id: new ObjectId(id) };
 
         const updateDoc = {
@@ -312,10 +465,11 @@ async function run() {
       }
     });
 
-    app.delete("/api/user/:id", verifyJWTToken, async (req, res) => {
+    app.delete("/api/user/:id", async (req, res) => {
       try {
         const id = req.params.id;
-
+        if (!ObjectId.isValid(id))
+          return res.status(400).send({ message: "Invalid ID format" });
         const query = { _id: new ObjectId(id) };
 
         const userExist = await usersCollection.findOne(query);
@@ -327,24 +481,16 @@ async function run() {
         }
 
         const result = await usersCollection.deleteOne(query);
-
-        if (result.deletedCount > 0) {
-          res.send({
-            success: true,
-            message: "User account permanently purged from platform.",
-            deletedCount: result.deletedCount,
-          });
-        } else {
-          res.status(400).send({
-            success: false,
-            message: "Failed to delete the user account.",
-          });
-        }
+        res.send({
+          success: true,
+          message: "User account permanently purged from platform.",
+          deletedCount: result.deletedCount,
+        });
       } catch (error) {
         console.error("User deletion error:", error);
         res.status(500).send({
           success: false,
-          message: "Internal server error while executing account purge.",
+          message: "Internal server error",
         });
       }
     });
@@ -354,11 +500,11 @@ async function run() {
         const {
           search = "",
           category = "",
-          classLevel = "", // 🧩 নতুন রিসিভড ফিল্টার: ক্লাস
-          subject = "", // 🧩 নতুন রিসিভড ফিল্টার: সাবজেক্ট
-          location = "", // 🧩 নতুন রিসিভড ফিল্টার: লোকেশন
-          sortBy = "date", // 📈 সর্টিং ফিল্ড: 'date' অথবা 'budget'
-          sortOrder = "desc", // 📈 সর্টিং অর্ডার: 'desc' অথবা 'asc'
+          classLevel = "",
+          subject = "",
+          location = "",
+          sortBy = "date",
+          sortOrder = "desc",
           page = 1,
           limit = 6,
           isAdminPanel = "false",
@@ -366,12 +512,10 @@ async function run() {
 
         let query = {};
 
-        // 🔒 সিকিউরিটি: অ্যাডমিন প্যানেল না হলে শুধু Approved পোস্ট দেখাবে
         if (isAdminPanel !== "true") {
           query.status = "Approved";
         }
 
-        // 🔍 ১. গ্লোবাল সার্চ মেকানিজম (টাইটেল, সাবজেক্ট বা লোকেশন)
         if (search && search !== "undefined" && search.trim() !== "") {
           query.$or = [
             { title: { $regex: search, $options: "i" } },
@@ -380,62 +524,51 @@ async function run() {
           ];
         }
 
-        // 🎯 ২. মিডিয়াম/ক্যাটাগরি ফিল্টার
         if (category && category !== "All" && category !== "undefined") {
           query.category = category;
         }
 
-        // 🎯 ৩. ক্লাস লেভেল অ্যাডভান্সড ফিল্টার
         if (classLevel && classLevel !== "All" && classLevel !== "undefined") {
           query.classLevel = classLevel;
         }
 
-        // 🎯 ৪. সুনির্দিষ্ট সাবজেক্ট ফিল্টার (কেস-ইনসেন্সিটিভ সার্চ সেফটি সহ)
         if (subject && subject !== "All" && subject !== "undefined") {
           query.subject = { $regex: subject, $options: "i" };
         }
 
-        // 🎯 ৫. সুনির্দিষ্ট লোকেশন ফিল্টার
         if (location && location !== "All" && location !== "undefined") {
           query.location = { $regex: location, $options: "i" };
         }
 
-        // 📈 ৬. ডাইনামিক সর্টিং মেকানিজম (Challenge 1)
         let sortQuery = {};
-        const orderDirection = sortOrder === "asc" ? 1 : -1; // asc হলে ১, desc হলে -১
+        const orderDirection = sortOrder === "asc" ? 1 : -1;
 
         if (sortBy === "budget") {
-          // স্যালারি/বাজেট অনুযায়ী সর্ট হবে (ডাটাবেজের 'salary' ফিল্ড ম্যাচ করে)
           sortQuery.salary = orderDirection;
         } else {
-          // ডিফল্ট সর্ট: নতুন থেকে পুরনো ডেট অনুযায়ী (_id-এর টাইমস্ট্যাম্প ট্র্যাক করে)
           sortQuery._id = orderDirection;
         }
 
-        // 👑 অ্যাডমিন প্যানেলের স্পেশাল কন্ডিশন: কোনো পেজিনেশন ছাড়াই সব ফিল্টারড ডাটা একসাথে যাবে
         if (isAdminPanel === "true") {
           const allTuitions = await tuitionsCollection
             .find(query)
-            .sort(sortQuery) // এখানেও ডাইনামিক সর্ট কাজ করবে
+            .sort(sortQuery)
             .toArray();
           return res.send(allTuitions);
         }
 
-        // 📄 ৭. পাবলিক পেজের জন্য পেজিনেশন ইঞ্জিন ক্যালকুলেশন (Challenge 2)
         const currentPage = parseInt(page) || 1;
         const itemsPerPage = parseInt(limit) || 6;
         const skip = (currentPage - 1) * itemsPerPage;
 
-        // টোটাল কাউন্ট এবং কুয়েরি এক্সিকিউশন
         const totalCount = await tuitionsCollection.countDocuments(query);
         const tuitions = await tuitionsCollection
           .find(query)
-          .sort(sortQuery) // ডাইনামিক সর্ট ইঞ্জিন অ্যাপ্লাইড
+          .sort(sortQuery)
           .skip(skip)
           .limit(itemsPerPage)
           .toArray();
 
-        // ফ্রন্টএন্ডে অবজেক্ট রেসপন্স পাঠানো
         res.send({
           tuitions,
           totalCount,
@@ -465,11 +598,13 @@ async function run() {
       }
     });
 
-    app.get("/api/tuition/:id", verifyJWTToken, async (req, res) => {
+    app.get("/api/tuition/:id", async (req, res) => {
       try {
         const id = req.params.id;
-        if (!id) {
-          return res.status(400).send({ message: "ID is required" });
+        if (!id || !ObjectId.isValid(id)) {
+          return res
+            .status(400)
+            .send({ message: "Valid document ID is required" });
         }
         const query = { _id: new ObjectId(id) };
         const result = await tuitionsCollection.findOne(query);
@@ -489,7 +624,6 @@ async function run() {
     app.post("/api/tuitions", verifyJWTToken, async (req, res) => {
       try {
         const tuitionPost = req.body;
-
         tuitionPost.status = "pending";
         tuitionPost.postedAt = new Date().toLocaleDateString("en-US", {
           month: "short",
@@ -498,8 +632,24 @@ async function run() {
         });
 
         delete tuitionPost._id;
-
         const result = await tuitionsCollection.insertOne(tuitionPost);
+
+        try {
+          await activitiesCollection.insertOne({
+            user: tuitionPost.studentName || "System Student",
+            type: "Tuition Circular",
+            detail: `Posted new tuition requirement circular for Class: ${tuitionPost.classLevel || "N/A"} - Subject: ${tuitionPost.subject || "General Core"}`,
+            status: "Pending",
+            date: new Date().toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            }),
+          });
+        } catch (logErr) {
+          console.error("Logger insertion error on tuition post:", logErr);
+        }
+
         res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Failed to create tuition post" });
@@ -509,12 +659,14 @@ async function run() {
     app.patch("/api/tuitions/status/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
-        const { status } = req.body; // 'Approved' or 'Rejected'
+        const { status } = req.body;
 
         if (!status) {
           return res.status(400).send({ message: "Status is required" });
         }
 
+        if (!ObjectId.isValid(id))
+          return res.status(400).send({ message: "Invalid ID format" });
         const query = { _id: new ObjectId(id) };
         const result = await tuitionsCollection.updateOne(query, {
           $set: { status: status, moderatedAt: new Date() },
@@ -531,8 +683,10 @@ async function run() {
         const updatedData = req.body;
 
         delete updatedData._id;
-
+        if (!ObjectId.isValid(id))
+          return res.status(400).send({ message: "Invalid ID format" });
         const query = { _id: new ObjectId(id) };
+
         const result = await tuitionsCollection.updateOne(query, {
           $set: updatedData,
         });
@@ -545,10 +699,11 @@ async function run() {
     app.delete("/api/tuitions/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
+        if (!ObjectId.isValid(id))
+          return res.status(400).send({ message: "Invalid ID format" });
         const query = { _id: new ObjectId(id) };
 
         const result = await tuitionsCollection.deleteOne(query);
-
         if (result.deletedCount === 0) {
           return res.status(404).send({
             success: false,
@@ -572,7 +727,6 @@ async function run() {
     app.post("/api/tuitions/apply", verifyJWTToken, async (req, res) => {
       try {
         const applyData = req.body;
-
         const checkQuery = {
           tuitionId: applyData.tuitionId,
           tutorEmail: applyData.tutorEmail,
@@ -597,6 +751,8 @@ async function run() {
     app.delete("/api/tuitions/apply/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
+        if (!ObjectId.isValid(id))
+          return res.status(400).send({ message: "Invalid ID format" });
         const query = { _id: new ObjectId(id) };
 
         const application = await applicantsCollection.findOne(query);
@@ -624,13 +780,17 @@ async function run() {
       }
     });
 
-    // applicants
-
+    // 🔄 পেন্ডিং টিউটরদের কিউ আনার গেট এপিআই
     app.get("/api/admin/pending-tutors", verifyJWTToken, async (req, res) => {
       try {
+        // 🎯 ফিক্স: কুয়েরিতে ভেরিফিকেশন স্ট্যাটাস ফিল্টারিং মঙ্গোডিবি প্রপার্টি লকড করা হলো ভাই
         const query = {
           role: "tutor",
-          $or: [{ isVerified: false }, { isVerified: { $exists: false } }],
+          $or: [
+            { verificationStatus: "Pending" },
+            { verificationStatus: { $exists: false } },
+            { isVerified: false },
+          ],
         };
 
         const pendingTutors = await usersCollection
@@ -646,6 +806,7 @@ async function run() {
       }
     });
 
+    // 🚫 টিউটর রিকোয়েস্ট অ্যাকসেপ্ট বা রিজেক্ট (PATCH) এপিআই ভাই
     app.patch("/api/admin/verify-tutor", verifyJWTToken, async (req, res) => {
       try {
         const { email } = req.query;
@@ -658,18 +819,20 @@ async function run() {
         }
 
         const query = { email: email, role: "tutor" };
-
         const isApproved = status === "Approved";
+
+        // 🎯 ফিক্স: রিজেক্ট হলে টিউটরকে সরাসরি ডিমোট করে স্টুডেন্ট বানানো এবং ডাটাবেজ আপডেট ক্লিন করা হলো ভাই
         const updateDoc = {
           $set: {
             isVerified: isApproved,
             verificationStatus: status,
             verifiedAt: isApproved ? new Date() : null,
+            // যদি এপ্রুভ না হয় (Rejected), রোল ডিমোট হয়ে 'student' হয়ে যাবে, যাতে সে পেন্ডিং কিউ থেকে নিমেষেই গায়েব হয়ে যায় ভাই
+            role: isApproved ? "tutor" : "student",
           },
         };
 
         const result = await usersCollection.updateOne(query, updateDoc);
-
         if (result.matchedCount === 0) {
           return res.status(404).send({
             message: "No pending tutor found with this registered email.",
@@ -709,30 +872,28 @@ async function run() {
         });
       }
     });
+    app.get(
+      "/api/tuitions/applicants/:id",
+      verifyJWTToken,
+      async (req, res) => {
+        try {
+          const tuitionId = req.params.id;
 
-    app.get("/api/tuitions/applicants/:id", verifyJWTToken, async (req, res) => {
-      try {
-        const tuitionId = req.params.id;
+          // ডাটাবেজের ফিল্ডের নাম 'tuitionId' ঠিক আছে, তবে আমরা এখন নিশ্চিত করছি যে এটি ঠিকঠাক ফিল্টার হচ্ছে
+          const result = await applicantsCollection
+            .find({ tuitionId: tuitionId })
+            .toArray();
 
+          // কনসোল লগ দিয়ে দেখুন কী আইডি আসছে
+          console.log("Searching in applicants for tuitionId:", tuitionId);
+          console.log("Results found:", result.length);
 
-        const query = {
-          tuitionId: tuitionId,
-        };
-
-
-        const result = await applicantsCollection.find(query).toArray();
-
-
-        res.send(result);
-      } catch (error) {
-        console.error("GET Applicants Error:", error);
-
-        res.status(500).send({
-          success: false,
-          message: error.message,
-        });
-      }
-    });
+          res.send(result);
+        } catch (error) {
+          res.status(500).send({ success: false, message: error.message });
+        }
+      },
+    );
 
     app.get("/api/applied-jobs", verifyJWTToken, async (req, res) => {
       try {
@@ -746,12 +907,10 @@ async function run() {
         }
 
         const query = { tutorEmail: email };
-
         const result = await applicantsCollection
           .find(query)
           .sort({ _id: -1 })
           .toArray();
-
         res.send(result);
       } catch (error) {
         console.error("Error fetching tutor applied jobs:", error);
@@ -765,10 +924,12 @@ async function run() {
     app.patch("/api/applied-jobs/:id", verifyJWTToken, async (req, res) => {
       try {
         const id = req.params.id;
-        const { proposal } = req.body; // সুইটঅ্যালার্ট২ থেকে আসা নতুন টেক্সট
+        const { proposal } = req.body;
 
+        if (!ObjectId.isValid(id))
+          return res.status(400).send({ message: "Invalid ID format" });
         const query = { _id: new ObjectId(id) };
-        const application = await applicantsCollection.findOne(query); // 👈 আপনার ডাটাবেজের অ্যাপ্লিকেশন কালেকশন ভেরিয়েবল নাম দিবেন ভাই
+        const application = await applicantsCollection.findOne(query);
 
         if (!application) {
           return res
@@ -783,7 +944,6 @@ async function run() {
           });
         }
 
-        // ৩. ডাটা আপডেট ডকুমেন্ট
         const updateDoc = {
           $set: {
             proposal: proposal,
@@ -806,96 +966,79 @@ async function run() {
       }
     });
 
-  
+    // একদম এই কোডটি কপি করে আপনার আগের রাউটটি রিপ্লেস করুন
+    app.patch(
+      "/api/tuitions/application-status",
+      verifyJWTToken,
+      async (req, res) => {
+        try {
+          const { tuitionId, tutorId } = req.query;
+          const { status } = req.body;
 
-    // payment history
+          console.log("Backend receiving:", { tuitionId, tutorId, status });
 
-    app.patch("/api/tuitions/application-status", verifyJWTToken, async (req, res) => {
-      try {
-        const { tuitionId, tutorEmail } = req.query;
-        const { status } = req.body;
+          if (!tuitionId || !tutorId || !status) {
+            return res
+              .status(400)
+              .send({ success: false, message: "Missing required params" });
+          }
 
-        if (!tuitionId || !tutorEmail || !status) {
-          return res.status(400).send({
+          // এখানে খেয়াল করুন: কোনো new ObjectId() ব্যবহার করিনি, কারণ ডাটাবেজে এগুলো স্ট্রিং
+          const result = await applicantsCollection.updateOne(
+            { tuitionId: String(tuitionId), tutorId: String(tutorId) },
+            { $set: { status: status, updatedAt: new Date() } },
+          );
+
+          if (result.matchedCount === 0) {
+            return res
+              .status(404)
+              .send({
+                success: false,
+                message: "Record not found in database",
+              });
+          }
+
+          res.send({ success: true, message: "Status updated successfully" });
+        } catch (error) {
+          console.error("Patch Error:", error);
+          res.status(500).send({ success: false, message: error.message });
+        }
+      },
+    );
+
+    app.get(
+      "/api/admin/financial-reports",
+      verifyJWTToken,
+      async (req, res) => {
+        try {
+          const query = { status: "successful" };
+          const transactions = await paymentsCollection
+            .find(query)
+            .sort({ _id: -1 })
+            .toArray();
+
+          const totalEarnings = transactions.reduce(
+            (sum, tx) => sum + parseFloat(tx.amount || 0),
+            0,
+          );
+
+          res.send({
+            transactions,
+            totalEarnings: totalEarnings.toFixed(2),
+          });
+        } catch (error) {
+          console.error("Financial analytics processing server error:", error);
+          res.status(500).send({
             success: false,
-            message: "tuitionId, tutorEmail and status are required",
+            message: "Internal analytics error",
           });
         }
-
-        const result = await applicantsCollection.updateOne(
-          {
-            tuitionId,
-            tutorEmail,
-          },
-          {
-            $set: {
-              status,
-              updatedAt: new Date(),
-            },
-          },
-        );
-
-        if (result.matchedCount === 0) {
-          return res.status(404).send({
-            success: false,
-            message: "Application not found",
-          });
-        }
-
-        if (result.modifiedCount === 0) {
-          return res.status(200).send({
-            success: true,
-            message: "Status already updated",
-          });
-        }
-
-        res.status(200).send({
-          success: true,
-          message: "Application status updated successfully",
-          result,
-        });
-      } catch (error) {
-        console.error("Application Status Update Error:", error);
-
-        res.status(500).send({
-          success: false,
-          message: error.message,
-          stack: error.stack,
-        });
-      }
-    });
-
-    app.get("/api/admin/financial-reports", verifyJWTToken, async (req, res) => {
-      try {
-        const query = { status: "successful" };
-
-        const transactions = await paymentsCollection
-          .find(query)
-          .sort({ _id: -1 })
-          .toArray();
-
-        const totalEarnings = transactions.reduce(
-          (sum, tx) => sum + parseFloat(tx.amount || 0),
-          0,
-        );
-
-        // ৪. ফ্রন্টএন্ডে প্রফেশনাল অবজেক্ট স্ট্রাকচার রেসপন্স পাঠানো
-        res.send({
-          transactions,
-          totalEarnings: totalEarnings.toFixed(2), // দশমিকের পর ২ ঘর রাখার জন্য
-        });
-      } catch (error) {
-        console.error("Financial analytics processing server error:", error);
-        res.status(500).send({
-          success: false,
-          message: "Internal analytics breakdown server error",
-        });
-      }
-    });
+      },
+    );
 
     app.get("/api/payments/:email", verifyJWTToken, async (req, res) => {
       try {
-        const email = req.params.email; //
+        const email = req.params.email;
 
         if (!email || email === "undefined" || email === "null") {
           return res.status(400).send({
@@ -905,76 +1048,105 @@ async function run() {
         }
 
         const query = { email: email.trim() };
-
         const result = await paymentsCollection
           .find(query)
           .sort({ _id: -1 })
           .toArray();
-
         res.send(result);
       } catch (error) {
         console.error("Error fetching payment history:", error);
         res.status(500).send({
           success: false,
-          message: "Internal server error while fetching transaction logs.",
+          message: "Internal server error",
         });
       }
     });
 
-    app.post("/api/create-checkout-session", verifyJWTToken, async (req, res) => {
-      try {
-        const { price, tuitionTitle, tuitionId, tutorId } = req.body;
+    app.post(
+      "/api/create-checkout-session",
+      verifyJWTToken,
+      async (req, res) => {
+        try {
+          const { price, tuitionTitle, tuitionId, tutorId } = req.body;
 
-        if (!price || !tuitionId || !tutorId) {
-          return res.status(400).send({
+          if (!price || !tuitionId || !tutorId) {
+            return res.status(400).send({
+              success: false,
+              message:
+                "Missing required details: price, tuitionId, and tutorId are needed.",
+            });
+          }
+
+          const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"],
+            mode: "payment",
+            line_items: [
+              {
+                price_data: {
+                  currency: "bdt",
+                  product_data: {
+                    name: tuitionTitle || "Tuition Matching Fee",
+                    description: `Secure Escrow for Tutor ID: ${tutorId}`,
+                  },
+                  unit_amount: Math.round(parseFloat(price) * 100),
+                },
+                quantity: 1,
+              },
+            ],
+            metadata: { tuitionId, tutorId },
+            success_url: `${process.env.CLIENT_URL || "https://etuitionbd-monir.vercel.app"}/dashboard/payment-success?tuitionId=${tuitionId}&tutorId=${tutorId}`,
+            cancel_url: `${process.env.CLIENT_URL || "https://etuitionbd-monir.vercel.app"}/dashboard/student/view-applicants/${tuitionId}`,
+          });
+
+          res.send({ success: true, url: session.url });
+        } catch (error) {
+          console.error("Stripe Checkout Session Error:", error);
+          res.status(500).send({
             success: false,
-            message:
-              "Missing required details: price, tuitionId, and tutorId are needed.",
+            message: "Stripe gateway configuration failed.",
           });
         }
+      },
+    );
 
-        const session = await stripe.checkout.sessions.create({
-          payment_method_types: ["card"],
-          mode: "payment",
-          line_items: [
-            {
-              price_data: {
-                currency: "bdt",
-                product_data: {
-                  name: tuitionTitle || "Tuition Matching Fee",
-                  description: `Secure Escrow for Tutor ID: ${tutorId}`,
-                },
-                unit_amount: Math.round(parseFloat(price) * 100),
-              },
-              quantity: 1,
-            },
-          ],
-          metadata: {
-            tuitionId,
-            tutorId,
-          },
-          success_url: `${process.env.CLIENT_URL || "https://etuitionbd-monir.vercel.app"}/dashboard/payment-success?tuitionId=${tuitionId}&tutorId=${tutorId}`,
-          cancel_url: `${process.env.CLIENT_URL || "https://etuitionbd-monir.vercel.app"}/dashboard/student/view-applicants/${tuitionId}`,
+    // 💳 পেমেন্ট সাকসেস হওয়ার পর ডাটাবেজে রেকর্ড করা ও স্ট্যাটাস আপডেট করার এপিআই
+    app.post("/api/payments/record", verifyJWTToken, async (req, res) => {
+      try {
+        const paymentData = req.body; // ফ্রন্টএন্ড থেকে আসা পেমেন্ট ডিটেইলস
+        const { tuitionId, tutorId, price, transactionId, studentEmail } =
+          paymentData;
+
+        // ১. পেমেন্ট কালেকশনে ডাটা ইনসার্ট করা
+        const paymentResult = await paymentsCollection.insertOne({
+          ...paymentData,
+          status: "successful",
+          date: new Date(),
         });
 
-        res.send({ success: true, url: session.url });
+        // ২. টিউশন স্ট্যাটাস 'Approved' করা
+        const tuitionResult = await tuitionsCollection.updateOne(
+          { _id: new ObjectId(tuitionId) },
+          { $set: { status: "Approved", tutorId: tutorId } },
+        );
+
+        // ৩. অ্যাপ্লিকেন্ট স্ট্যাটাস 'Accepted' করা
+        await applicantsCollection.updateOne(
+          { tuitionId: tuitionId, tutorId: tutorId },
+          { $set: { status: "accepted" } },
+        );
+
+        res.send({ success: true, paymentResult, tuitionResult });
       } catch (error) {
-        console.error("Stripe Checkout Session Error:", error);
-        res.status(500).send({
-          success: false,
-          message: "Stripe gateway configuration failed.",
-          error: error.message,
-        });
+        console.error("Payment recording error:", error);
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to record payment" });
       }
     });
-
-    // bookmarks
 
     app.post("/api/bookmarks", verifyJWTToken, async (req, res) => {
       try {
-        const bookmarkData = req.body; // ফ্রন্টএন্ড থেকে { userEmail, tuitionId } আসবে
-
-        // ডুপ্লিকেট চেক: ইউজার এই পোস্ট অলরেডি বুকমার্ক করেছে কিনা
+        const bookmarkData = req.body;
         const query = {
           userEmail: bookmarkData.userEmail,
           tuitionId: bookmarkData.tuitionId,
@@ -997,20 +1169,14 @@ async function run() {
     app.get("/api/my-bookmarks/:email", verifyJWTToken, async (req, res) => {
       try {
         const email = req.params.email;
-
-        // প্রথমে ইউজারের ইমেইল দিয়ে সব বুকমার্ক ডাটা আনা হলো
         const userBookmarks = await bookmarksCollection
           .find({ userEmail: email })
           .toArray();
-
-        // বুকমার্ক করা প্রতিটা টিউশন আইডির মেইন ডিটেইলস ডাটাবেজ থেকে একবারে তুলে আনা
         const tuitionIds = userBookmarks.map((b) => new ObjectId(b.tuitionId));
 
-        // $in অপারেটর দিয়ে সব টিউশন ডাটা একসাথে ফেচ করা
         const bookmarkedTuitions = await tuitionsCollection
           .find({ _id: { $in: tuitionIds } })
           .toArray();
-
         res.send(bookmarkedTuitions);
       } catch (error) {
         res.status(500).send({ message: "Server error fetching bookmarks" });
@@ -1031,18 +1197,87 @@ async function run() {
       }
     });
 
-    app.listen(port, () => {
-      console.log(`Example app listening on port ${port}`);
+    // ==========================================
+    // 👑 ডাটাবেজ ড্রিভেন সিস্টেম অ্যাক্টিভিটি রাউটস ইঞ্জিন
+    // ==========================================
+    app.get("/api/admin/activities", verifyJWTToken, async (req, res) => {
+      try {
+        const result = await activitiesCollection
+          .find({})
+          .sort({ _id: -1 })
+          .toArray();
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({
+          success: false,
+          message: "Failed to read database operation logs",
+        });
+      }
     });
 
-    // Send a ping to confirm a successful connection
-    // await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!",
+    app.patch("/api/admin/activities/:id", verifyJWTToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const { user, detail, status } = req.body;
+
+        if (!ObjectId.isValid(id))
+          return res
+            .status(400)
+            .send({ success: false, message: "Invalid ID format" });
+
+        const query = { _id: new ObjectId(id) };
+        const updateDoc = {
+          $set: { user, detail, status, updatedAt: new Date() },
+        };
+
+        const result = await activitiesCollection.updateOne(query, updateDoc);
+        res.send({
+          success: true,
+          message: "Log updated successfully in database",
+          result,
+        });
+      } catch (error) {
+        res
+          .status(500)
+          .send({ success: false, message: "Database patch workflow failure" });
+      }
+    });
+
+    app.delete(
+      "/api/admin/activities/:id",
+      verifyJWTToken,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          if (!ObjectId.isValid(id))
+            return res
+              .status(400)
+              .send({ success: false, message: "Invalid ID format" });
+
+          const query = { _id: new ObjectId(id) };
+          const result = await activitiesCollection.deleteOne(query);
+          res.send({
+            success: true,
+            message: "Purged log from cloud cluster",
+            result,
+          });
+        } catch (error) {
+          res.status(500).send({
+            success: false,
+            message: "Database deletion pipeline crashed",
+          });
+        }
+      },
     );
   } finally {
-    // Ensures that the client will close when you finish/error
-    // await client.close();
+    // Client close block disabled for continuous cloud server runtime
   }
 }
+
+// রান ফাংশন এক্সিকিউশন ট্র্যাকার
 run().catch(console.dir);
+
+// পোর্ট লিসেনার ব্লকের সেফ পজিশন শিফটিং লক
+app.listen(port, () => {
+  console.log(`eTuitionBD Operational Server Core live on port: ${port} 🚀`);
+});
