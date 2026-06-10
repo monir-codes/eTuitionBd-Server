@@ -885,8 +885,8 @@ async function run() {
             .toArray();
 
           // কনসোল লগ দিয়ে দেখুন কী আইডি আসছে
-          console.log("Searching in applicants for tuitionId:", tuitionId);
-          console.log("Results found:", result.length);
+          // console.log("Searching in applicants for tuitionId:", tuitionId);
+          // console.log("Results found:", result.length);
 
           res.send(result);
         } catch (error) {
@@ -974,7 +974,7 @@ async function run() {
           const { tuitionId, tutorId } = req.query;
           const { status } = req.body;
 
-          console.log("Backend receiving:", { tuitionId, tutorId, status });
+          // console.log("Backend receiving:", { tuitionId, tutorId, status });
 
           if (!tuitionId || !tutorId || !status) {
             return res
@@ -1278,5 +1278,5 @@ run().catch(console.dir);
 
 // পোর্ট লিসেনার ব্লকের সেফ পজিশন শিফটিং লক
 app.listen(port, () => {
-  console.log(`eTuitionBD Operational Server Core live on port: ${port} 🚀`);
+  // console.log(`eTuitionBD Operational Server Core live on port: ${port} 🚀`);
 });
