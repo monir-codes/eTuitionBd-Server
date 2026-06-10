@@ -969,7 +969,6 @@ async function run() {
     // একদম এই কোডটি কপি করে আপনার আগের রাউটটি রিপ্লেস করুন
     app.patch(
       "/api/tuitions/application-status",
-      verifyJWTToken,
       async (req, res) => {
         try {
           const { tuitionId, tutorId } = req.query;
@@ -985,7 +984,7 @@ async function run() {
 
           // এখানে খেয়াল করুন: কোনো new ObjectId() ব্যবহার করিনি, কারণ ডাটাবেজে এগুলো স্ট্রিং
           const result = await applicantsCollection.updateOne(
-            { tuitionId: String(tuitionId), tutorId: String(tutorId) },
+            { tuitionId: tuitionId, tutorId: tutorId },
             { $set: { status: status, updatedAt: new Date() } },
           );
 
